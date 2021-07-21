@@ -1,6 +1,6 @@
 $originalp = get-process -name TSMBootstrap
-$vb = [Microsoft.VisualBasic.Interaction]
-$vb::AppActivate("Task")
+$vb = New-Object -ComObject wscript.shell
+$vb.AppActivate("Task")
 $w = [System.Windows.Forms.SendKeys]
 
 $pwfile = get-content .\words.txt
