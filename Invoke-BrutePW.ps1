@@ -1,87 +1,34 @@
-# Get-ChildWindow Function https://stackoverflow.com/questions/25369285/how-can-i-get-all-window-handles-by-a-process-in-powershell
+$originalp = get-process -name TSMBootstrap
+$vb = [Microsoft.VisualBasic.Interaction]
+$vb::AppActivate("Task")
+$w = [System.Windows.Forms.SendKeys]
 
-function Get-ChildWindow{
-[CmdletBinding()]
-param (
-    [Parameter(ValueFromPipeline = $true, ValueFromPipelinebyPropertyName = $true)]
-    [ValidateNotNullorEmpty()]
-    [System.IntPtr]$MainWindowHandle
-)
+$pwfile = get-content .\words.txt
 
-BEGIN{
-    function Get-WindowName($hwnd) {
-        $len = [apifuncs]::GetWindowTextLength($hwnd)
-        if($len -gt 0){
-            $sb = New-Object text.stringbuilder -ArgumentList ($len + 1)
-            $rtnlen = [apifuncs]::GetWindowText($hwnd,$sb,$sb.Capacity)
-            $sb.tostring()
-        }
-    }
+echo "Number of passwords loaded: $($pwfile.count)"
 
-    if (("APIFuncs" -as [type]) -eq $null){
-        Add-Type  @"
-        using System;
-        using System.Runtime.InteropServices;
-        using System.Collections.Generic;
-        using System.Text;
-        public class APIFuncs
-          {
-            [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            public static extern int GetWindowText(IntPtr hwnd,StringBuilder lpString, int cch);
+$stime = [System.Diagnostics.Stopwatch]::StartNew()
 
-            [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
-            public static extern IntPtr GetForegroundWindow();
+$attempts = 0
 
-            [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
-            public static extern Int32 GetWindowThreadProcessId(IntPtr hWnd,out Int32 lpdwProcessId);
-
-            [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
-            public static extern Int32 GetWindowTextLength(IntPtr hWnd);
-
-            [DllImport("user32")]
-            [return: MarshalAs(UnmanagedType.Bool)]
-            public static extern bool EnumChildWindows(IntPtr window, EnumWindowProc callback, IntPtr i);
-            public static List<IntPtr> GetChildWindows(IntPtr parent)
-            {
-               List<IntPtr> result = new List<IntPtr>();
-               GCHandle listHandle = GCHandle.Alloc(result);
-               try
-               {
-                   EnumWindowProc childProc = new EnumWindowProc(EnumWindow);
-                   EnumChildWindows(parent, childProc,GCHandle.ToIntPtr(listHandle));
-               }
-               finally
-               {
-                   if (listHandle.IsAllocated)
-                       listHandle.Free();
-               }
-               return result;
-           }
-            private static bool EnumWindow(IntPtr handle, IntPtr pointer)
-           {
-               GCHandle gch = GCHandle.FromIntPtr(pointer);
-               List<IntPtr> list = gch.Target as List<IntPtr>;
-               if (list == null)
-               {
-                   throw new InvalidCastException("GCHandle Target could not be cast as List<IntPtr>");
-               }
-               list.Add(handle);
-               //  You can modify this to check to see if you want to cancel the operation, then return a null here
-               return true;
-           }
-            public delegate bool EnumWindowProc(IntPtr hWnd, IntPtr parameter);
-           }
-"@
-        }
+foreach ($pw in $pwfile){
+	$w::SendWait($pw)
+	$w::SendWait("%n")
+	$attempts++
+	if($attempts % 1000 -eq 0){
+		$ct = $stime.Elapsed
+		echo "Elapsed:$ct Attempted: $attempts CurrentPassword: $pw"
+	}
+	#Start-Sleep -Milliseconds 2
+	if ((get-process -name TSMBootstrap).Handles -gt ($originalp.Handles + 10)){
+		$prevPW = $pwfile | Select-String -CaseSensitive -Pattern $pw -Context 2,0
+		echo "Password: $pw`nOr Previous Passwords: `n$prevPW"
+		$stime.Stop()
+		Break
+	}else{
+		#Start-Sleep -Milliseconds 1
+		$w::SendWait("{Enter}")
+	}
 }
 
-PROCESS{
-    foreach ($child in ([apifuncs]::GetChildWindows($MainWindowHandle))){
-        Write-Output (,([PSCustomObject] @{
-            MainWindowHandle = $MainWindowHandle
-            ChildId = $child
-            ChildTitle = (Get-WindowName($child))
-        }))
-    }
-}
-}
+write-host "Ran for: $($stime.Elapsed)"
